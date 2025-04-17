@@ -5,6 +5,7 @@ import os
 import json
 import asyncio
 
+TOKEN = os.getenv("TOKEN")
 
 intents = discord.Intents.default()
 intents.message_content = True  # メッセージの内容を読み取るには必要
