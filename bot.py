@@ -5,6 +5,21 @@ import os
 import json
 import asyncio
 
+from flask import Flask
+import os
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+# Renderが使うPORT環境変数を使う
+def run():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
+
 TOKEN = os.getenv("TOKEN")
 
 intents = discord.Intents.default()
@@ -608,6 +623,13 @@ async def m7_hype(ctx):
 
     await ctx.send(embed=embed)
 
+import threading
+
+# Flaskを別スレッドで動かす
+threading.Thread(target=run).start()
+
+# Botの起動
+bot.run("YOUR_TOKEN")
 
 bot.run(TOKEN)
 
