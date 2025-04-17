@@ -609,7 +609,8 @@ async def m7_hype(ctx):
     await ctx.send(embed=embed)
 
 
-bot.run("TOKEN")
+bot.run(TOKEN)
+
 
 
 
