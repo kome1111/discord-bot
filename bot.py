@@ -47,21 +47,82 @@ async def on_ready():
 async def ping(ctx):
     await ctx.send("Pong!")
 
+import discord
+from discord.ext import commands
+from discord.ui import View, Button
+import random
+
+bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+
+class ExcludeGameView(View):
+    def __init__(self, all_games):
+        super().__init__(timeout=60)
+        self.all_games = all_games
+        self.excluded = set()
+        self.confirmed = False
+
+        # 各ゲームにボタンを作成
+        for game in all_games:
+            self.add_item(self.make_button(game))
+
+    def make_button(self, game_name):
+        return GameButton(label=game_name, view=self)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # すべてのユーザーが使えるようにしたい場合はTrueのままでOK
+        return True
+
+
+class GameButton(Button):
+    def __init__(self, label, view: ExcludeGameView):
+        super().__init__(label=label, style=discord.ButtonStyle.secondary)
+        self.game_name = label
+        self.parent_view = view
+
+    async def callback(self, interaction: discord.Interaction):
+        if self.game_name in self.parent_view.excluded:
+            self.parent_view.excluded.remove(self.game_name)
+            self.style = discord.ButtonStyle.secondary
+            self.label = self.game_name
+            await interaction.response.send_message(f"✅ **{self.game_name}** を除外解除", ephemeral=True)
+        else:
+            self.parent_view.excluded.add(self.game_name)
+            self.style = discord.ButtonStyle.danger
+            self.label = f"🚫 {self.game_name}"
+            await interaction.response.send_message(f"🚫 **{self.game_name}** を除外に追加", ephemeral=True)
+
+        await interaction.message.edit(view=self.parent_view)
+
+
 @bot.command()
-async def r(ctx, *, exclude: str = ""):
+async def r(ctx):
     all_games = [
         "Bed Wars", "SkyWars", "TNT Run", "Build Battle",
         "Murder Mystery", "Duels", "AA", "DE",
         "よくわからん洋館のやつ", "ダンジョン_m6",
         "ダンジョン_F7", "kuudra_any", "SMP", "寝る"
     ]
-    exclude_list = [game.strip().lower() for game in exclude.split(",") if game.strip()]
-    filtered_games = [game for game in all_games if game.lower() not in exclude_list]
-    if not filtered_games:
-        await ctx.send("❌ 除外しすぎてゲームがなくなっちゃったよ！")
-        return
-    chosen = random.choice(filtered_games)
-    await ctx.send(f"🎲 除外ゲームをのぞいてランダム選択中...\n今日やるのは… **{chosen}** だ！！")
+
+    view = ExcludeGameView(all_games)
+
+    async def confirm_callback(interaction: discord.Interaction):
+        filtered_games = [g for g in all_games if g not in view.excluded]
+        if not filtered_games:
+            await interaction.response.send_message("❌ 除外しすぎてゲームがなくなっちゃったよ！", ephemeral=True)
+            return
+        chosen = random.choice(filtered_games)
+        embed = discord.Embed(
+            title="🎲 今日やるのは…",
+            description=f"**{chosen}** だ！！",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed)
+        view.stop()
+
+    view.add_item(Button(label="🎯 決定する", style=discord.ButtonStyle.success, custom_id="confirm", row=4))
+    view.children[-1].callback = confirm_callback
+
+    await ctx.send("除外したいゲームをボタンで選んでください！\n（選択後、下の「🎯 決定する」を押してね）", view=view)
 
 @bot.command()
 async def dice(ctx):
