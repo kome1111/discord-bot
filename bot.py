@@ -549,16 +549,23 @@ async def m7(ctx):
         save_data(m7_data, m7_data_file)
         return
 
+    # 基本報酬
     base_rewards = ["Undead Essence (125)", "Wither Essence (100)"]
-    qol_sum = 100 + 100
-    drop = None
+    qol_sum = 225  # 基本報酬 + チェスト QoL想定
+    obtained_candidates = []
 
-    # ドロップ選出（QoL上限441以内で最大利益優先）
-    for name, qol, chance, profit in sorted(m7_rewards, key=lambda x: (-x[3], x[1])):
-        if random.random() < chance and qol_sum + qol <= 441:
-            drop = (name, qol, profit)
-            qol_sum += qol
-            break
+    # ドロップ候補をQoL制限内かつ確率で抽選
+    for name, qol, chance, profit in m7_rewards:
+        if qol_sum + qol <= 441 and random.random() < chance:
+            obtained_candidates.append((name, qol, profit))
+
+    # 候補から利益が最大の1つを選ぶ（なければNone）
+    drop = max(obtained_candidates, key=lambda x: x[2], default=None)
+    if drop:
+        qol_sum += drop[1]
+        m7_data[user_id]["money"] += drop[2]
+        if drop[0] not in m7_data[user_id]["obtained"]:
+            m7_data[user_id]["obtained"].append(drop[0])
 
     # Embed構築
     embed = discord.Embed(
@@ -571,12 +578,6 @@ async def m7(ctx):
     if drop:
         embed.add_field(name="レア報酬", value=f"💎 {drop[0]}", inline=False)
         embed.add_field(name="利益", value=f"{drop[2]}m", inline=False)
-        m7_data[user_id]["money"] += drop[2]
-
-        # 取得記録に追加（重複なし）
-        if drop[0] not in m7_data[user_id]["obtained"]:
-            m7_data[user_id]["obtained"].append(drop[0])
-            save_data(m7_data, m7_data_file)
     else:
         embed.add_field(name="レア報酬", value="📦 レア報酬はありませんでした", inline=False)
 
@@ -584,40 +585,6 @@ async def m7(ctx):
 
     await ctx.send(embed=embed)
     save_data(m7_data, m7_data_file)
-
-
-
-
-@bot.command()
-async def m7_rank(ctx):
-    ranking = sorted(m7_data.items(), key=lambda x: x[1].get("money", 0), reverse=True)
-
-    embed = discord.Embed(
-        title="🏆 M7利益ランキング (Top 10)",
-        color=discord.Color.gold()
-    )
-
-    for i, (user_id, data) in enumerate(ranking[:10], 1):
-        user = await bot.fetch_user(int(user_id))
-        money = data.get("money", 0)
-        embed.add_field(name=f"{i}. {user.name}", value=f"{money:.1f}m", inline=False)
-
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def m7_comp(ctx):
-    user_id = str(ctx.author.id)
-    count = m7_data.get(user_id, {}).get("count", 0)
-
-    embed = discord.Embed(
-        title="📊 M7周回記録",
-        description=f"{ctx.author.mention} の今までのM7クリア回数は…",
-        color=discord.Color.teal()
-    )
-    embed.add_field(name="🌀 総回数", value=f"{count} 回", inline=False)
-
-    await ctx.send(embed=embed)
-
 
 @bot.command()
 async def m7_checkdrop(ctx, *, item_name: str):
