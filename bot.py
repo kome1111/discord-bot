@@ -19,6 +19,29 @@ goc_data_file = "goc_data.json"
 mob_data_file = "mob_data.json"
 mf_data_file = "mf_data.json"
 m7_data_file = "m7_data.json"
+m7_rng_file = "m7_rng.json"
+SETTINGS_FILE = "rng_settings.json"
+rng_meter_file = "rng_meter.json"
+m7_rng_settings = {}  # 最初に定義
+rng_meter = {}
+# ユーザーごとのrng設定を保存する辞書
+
+def save_rng_meter():
+    with open("rng_meter.json", "w", encoding="utf-8") as f:
+        json.dump(rng_meter, f, ensure_ascii=False, indent=4)
+
+def load_rng_meter():
+    global rng_meter
+    try:
+        with open("rng_meter.json", "r", encoding="utf-8") as f:
+            rng_meter = json.load(f)
+    except FileNotFoundError:
+        rng_meter = {}
+
+def save_rng_settings():
+    # m7_rng_settings を JSON 形式で保存
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(m7_rng_settings, f, ensure_ascii=False, indent=2)
 
 # 保存データの読み込み
 def load_data(file):
@@ -27,17 +50,24 @@ def load_data(file):
             return json.load(f)
     return {}
 
-# 保存データの保存
-def save_data(data, file):
-    with open(file, "w") as f:
-        json.dump(data, f)
-
 user_data = load_data(data_file)
 goc_data = load_data(goc_data_file)
 mob_data_file = "mob_data.json"
 mob_data = load_data(mob_data_file)
 mf_data = load_data(mf_data_file)
 m7_data = load_data(m7_data_file)
+
+# 起動時に呼ばれる
+def load_rng_settings():
+    global m7_rng_settings
+    if os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            m7_rng_settings = json.load(f)
+    else:
+        m7_rng_settings = {}
+
+load_rng_settings()
+load_rng_meter()
 
 @bot.event
 async def on_ready():
@@ -528,56 +558,61 @@ m7_rewards = [
 @bot.command()
 async def m7(ctx):
     user_id = str(ctx.author.id)
-
-    # 初期化（古いデータ形式でも対応）
+    
     if user_id not in m7_data:
-        m7_data[user_id] = {
-            "money": 0,
-            "runs": 0,
-            "obtained": []
-        }
-    else:
-        m7_data[user_id].setdefault("money", 0)
-        m7_data[user_id].setdefault("runs", 0)
-        m7_data[user_id].setdefault("obtained", [])
+        m7_data[user_id] = {"money": 0, "runs": 0, "obtained": []}
+    if user_id not in rng_meter:
+        rng_meter[user_id] = 0
 
     m7_data[user_id]["runs"] += 1
 
-    # 1%の失敗演出
+    # 失敗演出
     if random.random() < 0.01:
         await ctx.send(f"{ctx.author.mention} ゴミ野良が来たのでM7失敗！！💥")
         save_data(m7_data, m7_data_file)
+        save_data(rng_meter, rng_meter_file)
         return
 
-    # 基本報酬
     base_rewards = ["Undead Essence (125)", "Wither Essence (100)"]
-    qol_sum = 225  # 基本報酬 + チェスト QoL想定
-    obtained_candidates = []
+    qol_sum = 225
+    drop = None
 
-    # ドロップ候補をQoL制限内かつ確率で抽選
-    for name, qol, chance, profit in m7_rewards:
-        if qol_sum + qol <= 441 and random.random() < chance:
-            obtained_candidates.append((name, qol, profit))
+    rng_target = m7_rng_settings.get(user_id)
+    rng_hit = False
 
-    # 候補から利益が最大の1つを選ぶ（なければNone）
-    drop = max(obtained_candidates, key=lambda x: x[2], default=None)
-    if drop:
-        qol_sum += drop[1]
-        m7_data[user_id]["money"] += drop[2]
-        if drop[0] not in m7_data[user_id]["obtained"]:
-            m7_data[user_id]["obtained"].append(drop[0])
+    # RNGメーター天井処理
+    if rng_target:
+        cap = rng_caps.get(rng_target)
+        if cap and rng_meter[user_id] >= cap:
+            for name, qol, _, profit in m7_rewards:
+                if name == rng_target:
+                    drop = (name, qol, profit)
+                    qol_sum += qol
+                    rng_hit = True
+                    rng_meter[user_id] = 0  # リセット
+                    break
 
-    # Embed構築
-    embed = discord.Embed(
-        title="📦 M7チェスト報酬",
-        description=f"{ctx.author.mention} の報酬結果",
-        color=discord.Color.gold()
-    )
+    if not drop:
+        for name, qol, chance, profit in sorted(m7_rewards, key=lambda x: (-x[3], x[1])):
+            if random.random() < chance and qol_sum + qol <= 441:
+                drop = (name, qol, profit)
+                qol_sum += qol
+                break
+
+    # RNGメーター進行（天井でヒットしてない場合のみ）
+    if rng_target and not rng_hit:
+        if not drop or drop[0] != rng_target:
+            rng_meter[user_id] += 1
+
+    embed = discord.Embed(title="📦 M7チェスト報酬", description=f"{ctx.author.mention} の報酬結果", color=discord.Color.gold())
     embed.add_field(name="基本報酬", value="\n".join(base_rewards), inline=False)
 
     if drop:
         embed.add_field(name="レア報酬", value=f"💎 {drop[0]}", inline=False)
         embed.add_field(name="利益", value=f"{drop[2]}m", inline=False)
+        m7_data[user_id]["money"] += drop[2]
+        if drop[0] not in m7_data[user_id]["obtained"]:
+            m7_data[user_id]["obtained"].append(drop[0])
     else:
         embed.add_field(name="レア報酬", value="📦 レア報酬はありませんでした", inline=False)
 
@@ -585,32 +620,9 @@ async def m7(ctx):
 
     await ctx.send(embed=embed)
     save_data(m7_data, m7_data_file)
+    save_data(rng_meter, rng_meter_file)
 
-@bot.command()
-async def m7_checkdrop(ctx, *, item_name: str):
-    item_name = item_name.strip().lower()
-
-    found = None
-    for name, qol, chance, profit in m7_rewards:
-        if item_name == name.lower():
-            found = (name, qol, chance, profit)
-            break
-
-    if not found:
-        await ctx.send(f"❌ '{item_name}' はM7報酬リストに見つかりませんでした。")
-        return
-
-    name, qol, chance, profit = found
-    embed = discord.Embed(
-        title="🔍 M7 ドロップ情報",
-        description=f"『{name}』の情報はこちら！",
-        color=discord.Color.blue()
-    )
-    embed.add_field(name="🎯 ドロップ確率", value=f"{chance * 100:.5f}%", inline=False)
-    embed.add_field(name="📦 QoL値", value=str(qol), inline=True)
-    embed.add_field(name="💰 利益", value=f"{profit}m", inline=True)
-
-    await ctx.send(embed=embed)
+save_rng_meter()
 
 @bot.command()
 async def m7_hype(ctx):
@@ -636,6 +648,88 @@ async def m7_hype(ctx):
         embed.description = f"🧱 {ctx.author.mention} はまだHyperionを作ることができません。\n"
         embed.add_field(name="❌ 足りない素材", value="\n".join(missing_items), inline=False)
         embed.set_footer(text="ドロップは !m7 で集めよう！")
+
+    await ctx.send(embed=embed)
+
+from discord.ui import Button, View
+
+import discord
+from discord.ext import commands
+
+# ユーザーごとのRNG設定データ
+m7_rng_settings = {}
+
+class RNGSettingView(discord.ui.View):
+    def __init__(self, user_id):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+
+        # 選択肢
+        options = ["Handle", "Implosion", "Wither Shield", "Shadow Warp"]
+        for option in options:
+            self.add_item(RNGButton(label=option, user_id=user_id))
+
+        self.add_item(ClearButton(user_id=user_id))
+
+class RNGButton(discord.ui.Button):
+    def __init__(self, label, user_id):
+        super().__init__(label=label, style=discord.ButtonStyle.primary, custom_id=f"rng_{label.lower().replace(' ', '_')}")
+        self.user_id = user_id
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("これはあなた専用の設定メニューです。", ephemeral=True)
+
+        m7_rng_settings[str(self.user_id)] = self.label
+        save_rng_settings()
+        await interaction.response.send_message(f"🎯 RNGメーターを `{self.label}` に設定しました！", ephemeral=True)
+
+class ClearButton(discord.ui.Button):
+    def __init__(self, user_id):
+        super().__init__(label="設定解除", style=discord.ButtonStyle.danger, custom_id="rng_clear")
+        self.user_id = user_id
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("これはあなた専用の設定メニューです。", ephemeral=True)
+
+        if str(self.user_id) in m7_rng_settings:
+            del m7_rng_settings[str(self.user_id)]
+
+            save_rng_settings()
+            await interaction.response.send_message("❌ RNGメーター設定を解除しました。", ephemeral=True)
+        else:
+            await interaction.response.send_message("⚠ 設定されているRNGメーターがありません。", ephemeral=True)
+
+# コマンド
+@bot.command()
+async def rng_set(ctx):
+    """RNGメーターの設定メニュー"""
+    view = RNGSettingView(ctx.author.id)
+    await ctx.send("🎯 RNGメーターの設定を選んでください！", view=view)
+
+rng_caps = {
+    "Handle": 600,
+    "Implosion": 500,
+    "Wither Shield": 500,
+    "Shadow Warp": 500
+}
+
+@bot.command()
+async def rng_status(ctx):
+    user_id = str(ctx.author.id)
+
+    if user_id not in m7_rng_settings:
+        await ctx.send(f"{ctx.author.mention} 現在、RNGメーターは設定されていません。`!rng_set` コマンドで設定してください。")
+        return
+
+    target = m7_rng_settings[user_id]
+    cap = rng_caps.get(target, "?")
+    current = rng_meter.get(user_id, 0)
+
+    embed = discord.Embed(title="🎯 RNGメーター状況", color=discord.Color.blue())
+    embed.add_field(name="対象アイテム", value=target, inline=False)
+    embed.add_field(name="進行状況", value=f"{current} / {cap}", inline=False)
 
     await ctx.send(embed=embed)
 
