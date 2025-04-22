@@ -708,7 +708,7 @@ class ClearButton(discord.ui.Button):
 @bot.event
 async def on_shutdown():
     save_rng_meter()
-    
+
 # コマンド
 @bot.command()
 async def rng_set(ctx):
@@ -740,6 +740,27 @@ async def rng_status(ctx):
     embed.add_field(name="進行状況", value=f"{current} / {cap}", inline=False)
 
     await ctx.send(embed=embed)
+
+from discord.ext import commands
+
+@commands.has_permissions(administrator=True)
+@bot.command()
+async def rng_setcount(ctx, member: discord.Member, count: int):
+    """指定ユーザーのRNGメーターを任意の数に設定（管理者専用）"""
+    user_id = str(member.id)
+
+    if user_id not in m7_rng_settings:
+        await ctx.send(f"{member.mention} はまだRNGメーターの対象が設定されていません。")
+        return
+
+    if count < 0:
+        await ctx.send("⚠ RNGメーターは0以上にしてください。")
+        return
+
+    rng_meter[user_id] = count
+    save_rng_meter()
+
+    await ctx.send(f"✅ {member.mention} のRNGメーターを `{count}` に設定しました。")
 
 keep_alive()
 bot.run(TOKEN)
