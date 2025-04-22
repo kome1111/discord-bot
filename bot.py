@@ -574,7 +574,7 @@ async def m7(ctx):
         return
 
     base_rewards = ["Undead Essence (125)", "Wither Essence (100)"]
-    qol_sum = 225
+    qol_sum = 10
     drop = None
 
     rng_target = m7_rng_settings.get(user_id)
