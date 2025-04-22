@@ -27,8 +27,12 @@ rng_meter = {}
 # ユーザーごとのrng設定を保存する辞書
 
 def save_rng_meter():
-    with open("rng_meter.json", "w", encoding="utf-8") as f:
-        json.dump(rng_meter, f, ensure_ascii=False, indent=4)
+    try:
+        rng_meter_file = os.path.join(os.getcwd(), "rng_meter.json")
+        with open(rng_meter_file, "w", encoding="utf-8") as f:
+            json.dump(rng_meter, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Error saving rng_meter: {e}")
 
 def load_rng_meter():
     global rng_meter
@@ -701,6 +705,10 @@ class ClearButton(discord.ui.Button):
         else:
             await interaction.response.send_message("⚠ 設定されているRNGメーターがありません。", ephemeral=True)
 
+@bot.event
+async def on_shutdown():
+    save_rng_meter()
+    
 # コマンド
 @bot.command()
 async def rng_set(ctx):
