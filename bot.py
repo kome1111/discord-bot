@@ -762,5 +762,38 @@ async def rng_setcount(ctx, member: discord.Member, count: int):
 
     await ctx.send(f"✅ {member.mention} のRNGメーターを `{count}` に設定しました。")
 
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def force_handle(ctx, member: discord.Member):
+    user_id = str(member.id)
+
+    if user_id not in m7_data:
+        m7_data[user_id] = {"money": 0, "runs": 0, "obtained": []}
+    if user_id not in rng_meter:
+        rng_meter[user_id] = 0
+
+    # Handleドロップ処理
+    handle_qol = 216
+    handle_profit = 1500  # m単位（例）
+    drop = ("Necron's Handle", handle_qol, handle_profit)
+
+    m7_data[user_id]["money"] += handle_profit
+    m7_data[user_id]["runs"] += 1
+    if drop[0] not in m7_data[user_id]["obtained"]:
+        m7_data[user_id]["obtained"].append(drop[0])
+
+    # RNGメーターリセット
+    rng_meter[user_id] = 0
+
+    embed = discord.Embed(title="📦 M7チェスト報酬（強制ドロップ）", color=discord.Color.red())
+    embed.add_field(name="対象プレイヤー", value=member.mention, inline=False)
+    embed.add_field(name="強制レア報酬", value=f"💎 {drop[0]}", inline=False)
+    embed.add_field(name="利益", value=f"{drop[2]}m", inline=False)
+    embed.set_footer(text=f"合計QoL: {handle_qol}/441 ・ 実行回数: {m7_data[user_id]['runs']}回")
+
+    await ctx.send(embed=embed)
+    save_data(m7_data, m7_data_file)
+    save_data(rng_meter, rng_meter_file)
+    
 keep_alive()
 bot.run(TOKEN)
