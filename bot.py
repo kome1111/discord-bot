@@ -795,5 +795,62 @@ async def force_handle(ctx, member: discord.Member):
     save_data(m7_data, m7_data_file)
     save_data(rng_meter, rng_meter_file)
     
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def force_drop(ctx, member: discord.Member, *, item_name: str):
+    user_id = str(member.id)
+    item_key = item_name.lower()
+
+    forced_items = {
+        "wither shield": ("Wither Shield", 135, 1200),
+        "implosion": ("Implosion", 120, 1100),
+        "shadow warp": ("Shadow Warp", 105, 1000),
+    }
+
+    if item_key not in forced_items:
+        await ctx.send("❌ 有効なアイテム名を入力してください（例：wither shield, implosion, shadow warp）")
+        return
+
+    name, qol, profit = forced_items[item_key]
+
+    # 初期化
+    if user_id not in m7_data:
+        m7_data[user_id] = {"money": 0, "runs": 0, "obtained": []}
+
+    m7_data[user_id]["money"] += profit
+    if name not in m7_data[user_id]["obtained"]:
+        m7_data[user_id]["obtained"].append(name)
+
+    await ctx.send(f"✅ {member.mention} に `{name}` を強制ドロップさせました！💎 +{profit}m")
+
+    save_data(m7_data, m7_data_file)
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def m7_status(ctx):
+    if not m7_data:
+        await ctx.send("まだ誰もM7報酬を獲得していません。")
+        return
+
+    description = ""
+    for user_id, data in m7_data.items():
+        member = await bot.fetch_user(int(user_id))
+        name = member.name if member else f"ID: {user_id}"
+        obtained = ", ".join(data["obtained"]) if data["obtained"] else "なし"
+        meter = rng_meter.get(user_id, 0)
+
+        description += f"**{name}**\n"
+        description += f"🔁 実行回数: {data['runs']}回\n"
+        description += f"💰 所持金: {data['money']}m\n"
+        description += f"🎯 RNGメーター: {meter}\n"
+        description += f"💎 所持アイテム: {obtained}\n\n"
+
+    embed = discord.Embed(
+        title="📊 M7参加者ステータス一覧",
+        description=description[:4000],  # Discordの制限対策
+        color=discord.Color.teal()
+    )
+    await ctx.send(embed=embed)
+
 keep_alive()
 bot.run(TOKEN)
